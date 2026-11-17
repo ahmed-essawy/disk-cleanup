@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disk cleanup checklist</title>
+<style>
+:root {
+  --bg: #f6f7f9;
+  --fg: #1d2330;
+  --muted: #5d6677;
+  --card: #ffffff;
+  --border: #d9dde5;
+  --safe: #1f7a3d;
+  --your-call: #9a6700;
+  --critical: #b42318;
+  --accent: #2457d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171f;
+    --fg: #e6e9f0;
+    --muted: #9aa3b5;
+    --card: #1d222d;
+    --border: #333a4a;
+    --safe: #4cc474;
+    --your-call: #e3b341;
+    --critical: #ff7b72;
+    --accent: #7aa2ff;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.4;
+}
+main { max-width: 760px; margin: 0 auto; }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.tile {
+  flex: 1 1 100px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tile span { display: block; color: var(--muted); font-size: 0.8rem; }
+.tile strong { font-size: 1.2rem; }
+section {
+  margin-bottom: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+section h2 { margin: 0; padding: 10px 12px; font-size: 1rem; border-bottom: 1px solid var(--border); }
+#group-safe h2 { color: var(--safe); }
+#group-your_call h2 { color: var(--your-call); }
+#group-critical h2 { color: var(--critical); }
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.row:last-child { border-bottom: 0; }
+.row input { margin-top: 4px; flex: none; }
+.row .info { flex: 1 1 auto; min-width: 0; }
+.row .name { display: block; font-weight: 600; }
+.row .path, .row .reason { display: block; color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+.row .size { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  padding: 10px 14px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+button#btn-clean { color: #ffffff; background: var(--accent); border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+pre {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="tiles">
+    <div class="tile"><span>Free now</span><strong id="tile-free"></strong></div>
+    <div class="tile"><span>Selected to free</span><strong id="tile-selected"></strong></div>
+    <div class="tile"><span>Free after</span><strong id="tile-after"></strong></div>
+  </div>
+  <section id="group-safe"><h2>Safe</h2></section>
+  <section id="group-your_call"><h2>Your call</h2></section>
+  <section id="group-critical"><h2>Critical</h2></section>
+  <div class="actions">
+    <button type="button" id="btn-clean">Clean selected</button>
+    <button type="button" id="btn-reset">Reset to recommended</button>
+    <button type="button" id="btn-clear">Clear all</button>
+  </div>
+  <pre id="ids-output" hidden></pre>
+</main>
+<script>
+const DATA = {
+  free: 64424509440,
+  items: [
+    { id: 'user-temp', tier: 'safe', name: 'User Temp files older than 1 day', path: '%TEMP%', bytes: 3221225472, reason: '' },
+    { id: 'npm-cache', tier: 'safe', name: 'npm cache', path: '%LOCALAPPDATA%\\npm-cache', bytes: 2147483648, reason: '' },
+    { id: 'gradle-cache', tier: 'safe', name: 'Gradle caches', path: '%USERPROFILE%\\.gradle\\caches', bytes: 4294967296, reason: '' },
+    { id: 'docker-build-cache', tier: 'your_call', name: 'Docker build cache', path: 'Docker', bytes: 6442450944, reason: '' },
+    { id: 'old-installers', tier: 'your_call', name: 'Installers in Downloads older than 30 days', path: '%USERPROFILE%\\Downloads', bytes: 1073741824, reason: '' },
+    { id: 'database-files', tier: 'critical', name: 'Database data and log files', path: '*.mdf, *.ldf', bytes: 10737418240, reason: 'database' },
+    { id: 'user-folders', tier: 'critical', name: 'Documents', path: '%USERPROFILE%\\Documents', bytes: 21474836480, reason: 'user data' },
+    { id: 'windows-system', tier: 'critical', name: 'Windows system folders', path: '%SystemRoot%\\WinSxS', bytes: 8589934592, reason: 'system' }
+  ]
+};
+
+const BYTES_PER_GB = 1073741824;
+
+function formatGb(bytes) {
+  return (bytes / BYTES_PER_GB).toFixed(1) + ' GB';
+}
+
+function createText(tag, className, text) {
+  const element = document.createElement(tag);
+  element.className = className;
+  element.textContent = text;
+  return element;
+}
+
+function createRow(item) {
+  const row = document.createElement('label');
+  row.className = 'row';
+
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.dataset.id = item.id;
+  checkbox.disabled = item.tier === 'critical';
+  checkbox.addEventListener('change', updateTiles);
+
+  const info = document.createElement('span');
+  info.className = 'info';
+  info.appendChild(createText('span', 'name', item.name));
+  info.appendChild(createText('span', 'path', item.path));
+  if (item.tier === 'critical') {
+    info.appendChild(createText('span', 'reason', item.reason));
+  }
+
+  row.appendChild(checkbox);
+  row.appendChild(info);
+  row.appendChild(createText('span', 'size', formatGb(item.bytes)));
+  return row;
+}
+
+function renderItems() {
+  DATA.items.forEach(function (item) {
+    document.getElementById('group-' + item.tier).appendChild(createRow(item));
+  });
+}
+
+function checkboxes() {
+  return Array.from(document.querySelectorAll('input[data-id]'));
+}
+
+function applyDefaults() {
+  const tiers = new Map(DATA.items.map(function (item) { return [item.id, item.tier]; }));
+  checkboxes().forEach(function (checkbox) {
+    checkbox.checked = tiers.get(checkbox.dataset.id) === 'safe';
+  });
+}
+
+function selectedIds() {
+  const ticked = new Set(checkboxes().filter(function (checkbox) { return checkbox.checked; }).map(function (checkbox) { return checkbox.dataset.id; }));
+  return DATA.items.filter(function (item) { return ticked.has(item.id); }).map(function (item) { return item.id; });
+}
+
+function updateTiles() {
+  const ids = new Set(selectedIds());
+  const selected = DATA.items.reduce(function (sum, item) { return ids.has(item.id) ? sum + item.bytes : sum; }, 0);
+  document.getElementById('tile-free').textContent = formatGb(DATA.free);
+  document.getElementById('tile-selected').textContent = formatGb(selected);
+  document.getElementById('tile-after').textContent = formatGb(DATA.free + selected);
+}
+
+function onClean() {
+  const text = 'Clean these ids: ' + selectedIds().join(',');
+  if (typeof sendPrompt === 'function') {
+    sendPrompt(text);
+    return;
+  }
+  const output = document.getElementById('ids-output');
+  output.textContent = text;
+  output.hidden = false;
+}
+
+function onClearAll() {
+  checkboxes().forEach(function (checkbox) {
+    if (!checkbox.disabled) {
+      checkbox.checked = false;
+    }
+  });
+}
+
+document.getElementById('btn-clean').addEventListener('click', onClean);
+document.getElementById('btn-reset').addEventListener('click', function () {
+  applyDefaults();
+  updateTiles();
+});
+document.getElementById('btn-clear').addEventListener('click', function () {
+  onClearAll();
+  updateTiles();
+});
+
+renderItems();
+applyDefaults();
+updateTiles();
+</script>
+</body>
+</html>
