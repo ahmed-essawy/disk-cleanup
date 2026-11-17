@@ -831,6 +831,7 @@ seed_credentials_group() {
 }
 
 @test "F2 never deletes an oversized log inside the scan folder while other oversized logs go" {
+  if [ "$(uname -s)" = "Darwin" ]; then skip "app-logs-oversized does not cover ~/.cache on macOS"; fi
   local fixture
   fixture="$(fixture_rules '(.rules[] | select(.id == "app-logs-oversized") | .action.minSizeMB) = 1')"
   make_file "$XDG_CACHE_HOME/diskscan/big.log" 2097152
@@ -854,6 +855,7 @@ seed_credentials_group() {
 }
 
 @test "CI2 m8 protects the scan folder when XDG_CACHE_HOME ends with a slash" {
+  if [ "$(uname -s)" = "Darwin" ]; then skip "app-logs-oversized does not cover ~/.cache on macOS"; fi
   local fixture
   fixture="$(fixture_rules '(.rules[] | select(.id == "app-logs-oversized") | .action.minSizeMB) = 1')"
   export XDG_CACHE_HOME="$HOME/.cache/"
