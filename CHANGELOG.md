@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dry run by default when no ids are given.
 - `scan.json` records the home folder it was made for, and cleanup refuses the duplicates step for a scan made for another home.
 - Scan and cleanup exit with code 2 when `HOME` or `USERPROFILE` is not a canonical existing folder.
+- The scan file lives in a per-user folder outside Temp, `%LOCALAPPDATA%\diskscan` on Windows and `${XDG_CACHE_HOME:-$HOME/.cache}/diskscan` on macOS and Linux. Scan and cleanup refuse a scan folder or scan file that is a link, is owned by someone else or, on macOS and Linux, is writable by others, and cleanup never deletes inside the scan folder.
+- Docker disk compaction runs `diskpart /s` on a script file created with `CreateNew` inside the trust-checked per-user scan folder and deleted after the step.
 - Sandboxed Pester and bats suites.
 - Plugin and marketplace manifests.
 - CI on Windows, Ubuntu and macOS.

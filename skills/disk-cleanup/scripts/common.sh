@@ -447,54 +447,54 @@ dc_list_files() {
   shift 6
   local args=("$root")
   if [ "$recurse" = "no" ]; then
-    args=("${args[@]}" -maxdepth 1)
+    args=(${args[@]+"${args[@]}"} -maxdepth 1)
   fi
-  args=("${args[@]}" -xdev)
+  args=(${args[@]+"${args[@]}"} -xdev)
   local prune_exprs=()
   local p
   while IFS= read -r p || [ -n "$p" ]; do
     [ -n "$p" ] || continue
     if [ "$p" != "$root" ] && dc_is_under "$p" "$root"; then
       if [ "${#prune_exprs[@]}" -gt 0 ]; then
-        prune_exprs=("${prune_exprs[@]}" -o)
+        prune_exprs=(${prune_exprs[@]+"${prune_exprs[@]}"} -o)
       fi
-      prune_exprs=("${prune_exprs[@]}" -path "$p")
+      prune_exprs=(${prune_exprs[@]+"${prune_exprs[@]}"} -path "$p")
     fi
   done <<<"$crit_paths"
   local n
   while IFS= read -r n || [ -n "$n" ]; do
     [ -n "$n" ] || continue
     if [ "${#prune_exprs[@]}" -gt 0 ]; then
-      prune_exprs=("${prune_exprs[@]}" -o)
+      prune_exprs=(${prune_exprs[@]+"${prune_exprs[@]}"} -o)
     fi
-    prune_exprs=("${prune_exprs[@]}" -iname "$n")
+    prune_exprs=(${prune_exprs[@]+"${prune_exprs[@]}"} -iname "$n")
   done <<<"$crit_names"
   if [ "${#prune_exprs[@]}" -gt 0 ]; then
-    args=("${args[@]}" '(' "${prune_exprs[@]}" ')' -prune -o)
+    args=(${args[@]+"${args[@]}"} '(' ${prune_exprs[@]+"${prune_exprs[@]}"} ')' -prune -o)
   fi
-  args=("${args[@]}" -type f)
+  args=(${args[@]+"${args[@]}"} -type f)
   if [ "$#" -gt 0 ]; then
     local inc_exprs=()
     local inc
     for inc in "$@"; do
       if [ "${#inc_exprs[@]}" -gt 0 ]; then
-        inc_exprs=("${inc_exprs[@]}" -o)
+        inc_exprs=(${inc_exprs[@]+"${inc_exprs[@]}"} -o)
       fi
-      inc_exprs=("${inc_exprs[@]}" -iname "$inc")
+      inc_exprs=(${inc_exprs[@]+"${inc_exprs[@]}"} -iname "$inc")
     done
-    args=("${args[@]}" '(' "${inc_exprs[@]}" ')')
+    args=(${args[@]+"${args[@]}"} '(' ${inc_exprs[@]+"${inc_exprs[@]}"} ')')
   fi
   if [ "$min_bytes" -gt 0 ]; then
     local min_k=$(( (min_bytes + 1023) / 1024 - 1 ))
-    args=("${args[@]}" -size "+${min_k}k")
+    args=(${args[@]+"${args[@]}"} -size "+${min_k}k")
   fi
   if [ "$min_age_days" -gt 0 ]; then
     local mtime_arg=$(( min_age_days - 1 ))
-    args=("${args[@]}" -mtime "+$mtime_arg")
+    args=(${args[@]+"${args[@]}"} -mtime "+$mtime_arg")
   fi
-  args=("${args[@]}" -print0)
+  args=(${args[@]+"${args[@]}"} -print0)
   local f sz
-  { find "${args[@]}" 2>/dev/null || true; } | while IFS= read -r -d '' f; do
+  { find ${args[@]+"${args[@]}"} 2>/dev/null || true; } | while IFS= read -r -d '' f; do
     if [ "$min_bytes" -gt 0 ]; then
       sz="$(dc_file_size "$f" 2>/dev/null)" || continue
       [ "$sz" -ge "$min_bytes" ] || continue
@@ -576,4 +576,30 @@ dc_dedupe_deletions() {
     done | LC_ALL=C sort -t "$field_sep" -k1,1n -k3,3 |
       awk -F '\t' '{ n[$2]++; ids[NR] = $2; rows[NR] = substr($0, length($1) + length($2) + 3) } END { for (r = 2; r <= NR; r++) if (n[ids[r]] == 1) print rows[r] }'
   )
+}
+
+dc_default_scan_dir() {
+  local cache_home="${XDG_CACHE_HOME:-}"
+  case "$cache_home" in
+    /*) ;;
+    *) cache_home="$HOME/.cache" ;;
+  esac
+  printf '%s/diskscan\n' "$cache_home"
+}
+
+dc_scan_item_trusted() {
+  local item
+  for item in "$@"; do
+    [ -e "$item" ] || [ -L "$item" ] || continue
+    [ ! -L "$item" ] || return 1
+    [ -O "$item" ] || return 1
+    [ -z "$(find "$item" -maxdepth 0 \( -perm -020 -o -perm -002 \) 2>/dev/null)" ] || return 1
+  done
+  return 0
+}
+
+dc_make_private_dir() {
+  mkdir -p -- "$(dirname -- "$1")" 2>/dev/null || return 1
+  [ -d "$1" ] && return 0
+  ( umask 077 && mkdir -- "$1" ) 2>/dev/null
 }

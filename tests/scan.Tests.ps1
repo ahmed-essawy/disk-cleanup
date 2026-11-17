@@ -289,4 +289,37 @@ Describe 'scan.ps1 round 1' {
         $rule = @($json.rules | Where-Object { $_.id -eq 'exact-duplicates' })[0]
         $rule.bytes | Should -Be 0
     }
+
+    It 'F2 writes scan.json to the per-user LOCALAPPDATA diskscan folder by default' {
+        $res = Invoke-DiskCleanupScript -Name 'scan.ps1' -Arguments @('-Target', $script:sb.Home)
+        $res.ExitCode | Should -Be 0
+        $expected = Join-Path $script:sb.Local 'diskscan\scan.json'
+        [System.IO.File]::Exists($expected) | Should -BeTrue
+        $res.StdOut | Should -Match ([regex]::Escape($expected))
+    }
+
+    It 'F2 refuses an output folder that is a junction with exit 3' {
+        $link = Join-Path $script:sb.Root 'linked-out'
+        $null = New-Item -ItemType Junction -Path $link -Target $script:sb.Out
+        try {
+            $res = Invoke-DiskCleanupScript -Name 'scan.ps1' -Arguments @('-Target', $script:sb.Home, '-OutputDir', $link)
+            $res.ExitCode | Should -Be 3
+            $res.StdErr | Should -Match 'Output folder refused: .* is a link or not owned by the current user'
+            @(Get-ChildItem -LiteralPath $script:sb.Out -Force).Count | Should -Be 0
+        } finally {
+            [System.IO.Directory]::Delete($link)
+        }
+    }
+
+    It 'F2 trusts a missing path and a folder owned by the current user and refuses a junction' {
+        Test-TrustedScanItem -Path (Join-Path $script:sb.Root 'missing') | Should -BeTrue
+        Test-TrustedScanItem -Path $script:sb.Out | Should -BeTrue
+        $link = Join-Path $script:sb.Root 'linked-check'
+        $null = New-Item -ItemType Junction -Path $link -Target $script:sb.Out
+        try {
+            Test-TrustedScanItem -Path $link | Should -BeFalse
+        } finally {
+            [System.IO.Directory]::Delete($link)
+        }
+    }
 }

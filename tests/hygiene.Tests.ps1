@@ -92,6 +92,20 @@ Describe 'repository hygiene' {
         $offending | Should -BeNullOrEmpty -Because ("comment lines found at: " + (@($offending) -join ', '))
     }
 
+    It 'expands bash arrays only in the form safe for an empty array on bash 3.2' {
+        $safeForm = '\$\{(\w+)\[@\]\+"\$\{\1\[@\]\}"\}'
+        $bareForm = '\$\{\w+\[[@*]\]\}'
+        $offending = foreach ($path in Get-FilesWithExtension @('.sh', '.bash', '.bats')) {
+            $lines = (Get-RepoText $path) -split "`r?`n"
+            for ($index = 0; $index -lt $lines.Count; $index++) {
+                if (([regex]::Replace($lines[$index], $safeForm, '')) -match $bareForm) {
+                    '{0}:{1}' -f $path, ($index + 1)
+                }
+            }
+        }
+        $offending | Should -BeNullOrEmpty -Because ("unsafe empty array expansion at: " + (@($offending) -join ', '))
+    }
+
     It 'has no HTML comments in markdown and html files' {
         $found = Get-FilesMatching (Get-FilesWithExtension $script:MarkupExtensions) { param($text) $text.Contains('<!--') }
         $found | Should -BeNullOrEmpty -Because ("these files hold an HTML comment: " + ($found -join ', '))

@@ -69,7 +69,7 @@ resolve_log_path() {
     printf 'No usable log path: %s\n' "$chosen" >&2
     return 3
   fi
-  if ! mkdir -p -- "$(dirname "$chosen")" 2>/dev/null; then
+  if ! dc_make_private_dir "$(dirname "$chosen")"; then
     printf 'No usable log path: %s\n' "$chosen" >&2
     return 3
   fi
@@ -241,14 +241,29 @@ run_dedupe_action() {
       else
         skipped=$((skipped + 1))
       fi
-    done < <(dc_dedupe_deletions "$prot_paths" "$prot_names" "${valid[@]}")
+    done < <(dc_dedupe_deletions "$prot_paths" "$prot_names" ${valid[@]+"${valid[@]}"})
   done < <(jq -c '.duplicates[]?' "$scan_json")
   emit_deletion_result "$groups" "" "$total" "$deleted" "$skipped"
 }
 
+protect_scan_folder() {
+  local folder
+  folder="$(dc_canonical_path "$1")" || return 0
+  crit_paths="${crit_paths:+$crit_paths$'\n'}$folder"
+  prot_paths="${prot_paths:+$prot_paths$'\n'}$folder"
+}
+
+stage_file_list() {
+  local list_file="$1"
+  shift
+  ( dc_list_files "$@" ) >"$list_file" || { rm -f -- "$list_file"; return 1; }
+}
+
 delete_old_version_dir() {
   local d="$1"
-  local f size deleted=0 skipped=0 bytes=0
+  local f size list_file deleted=0 skipped=0 bytes=0
+  list_file="$(mktemp "${TMPDIR:-/tmp}/dc-list.XXXXXX")"
+  stage_file_list "$list_file" "$d" yes 0 0 "$crit_paths" "$crit_names" || return 1
   while IFS= read -r -d '' f; do
     size="$(dc_file_size "$f")"
     if guarded_delete "$f" "$crit_paths" "$crit_names"; then
@@ -257,14 +272,15 @@ delete_old_version_dir() {
     else
       skipped=$((skipped + 1))
     fi
-  done < <(dc_list_files "$d" yes 0 0 "$crit_paths" "$crit_names")
+  done <"$list_file"
+  rm -f -- "$list_file"
   prune_empty_dirs "$d" "$crit_paths" "$crit_names"
   rmdir -- "$d" 2>/dev/null || true
   printf '%s %s %s\n' "$deleted" "$skipped" "$bytes"
 }
 
 run_old_versions_action() {
-  local p d d_deleted d_skipped d_bytes
+  local p d d_deleted d_skipped d_bytes version_result
   local ok_paths=0 refused_paths="" bytes=0 deleted=0 skipped=0
   while IFS= read -r p; do
     [ -n "$p" ] || continue
@@ -285,7 +301,8 @@ run_old_versions_action() {
         bytes=$((bytes + $(dc_folder_bytes "$d" "$crit_paths" "$crit_names")))
         continue
       fi
-      read -r d_deleted d_skipped d_bytes <<<"$(delete_old_version_dir "$d")"
+      version_result="$(delete_old_version_dir "$d")" || return 1
+      read -r d_deleted d_skipped d_bytes <<<"$version_result"
       deleted=$((deleted + d_deleted))
       skipped=$((skipped + d_skipped))
       bytes=$((bytes + d_bytes))
@@ -375,7 +392,7 @@ run_file_deletion() {
   local min_bytes="$3"
   local age_days="$4"
   shift 4
-  local p f size listed emptied_dirs last_dir
+  local p f size listed list_file emptied_dirs last_dir
   local ok_paths=0 refused_paths="" bytes=0 deleted=0 skipped=0
   while IFS= read -r p; do
     [ -n "$p" ] || continue
@@ -388,12 +405,14 @@ run_file_deletion() {
       run_before_commands "$rule"
     fi
     if [ "$dry_run" = "yes" ]; then
-      listed="$(dc_list_files "$p" "$recurse" "$min_bytes" "$age_days" "$crit_paths" "$crit_names" "$@" | dc_sum_file_bytes)"
+      listed="$(dc_list_files "$p" "$recurse" "$min_bytes" "$age_days" "$crit_paths" "$crit_names" "$@" | dc_sum_file_bytes)" || return 1
       bytes=$((bytes + listed))
       continue
     fi
     emptied_dirs=""
     last_dir=""
+    list_file="$(mktemp "${TMPDIR:-/tmp}/dc-list.XXXXXX")"
+    stage_file_list "$list_file" "$p" "$recurse" "$min_bytes" "$age_days" "$crit_paths" "$crit_names" "$@" || return 1
     while IFS= read -r -d '' f; do
       if dc_is_protected_target "$f" "$crit_paths" "$crit_names"; then
         skipped=$((skipped + 1))
@@ -410,7 +429,8 @@ run_file_deletion() {
       else
         skipped=$((skipped + 1))
       fi
-    done < <(dc_list_files "$p" "$recurse" "$min_bytes" "$age_days" "$crit_paths" "$crit_names" "$@")
+    done <"$list_file"
+    rm -f -- "$list_file"
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       prune_emptied_parents "$f" "$p" "$crit_paths" "$crit_names"
@@ -496,7 +516,8 @@ ordered_ids() {
 
 main() {
   dc_canonicalize_env || fail_arg "HOME is not a canonical absolute path: ${HOME-}"
-  local ids_arg="" log_arg="" scan_path="$HOME/diskscan/scan.json"
+  local ids_arg="" log_arg="" scan_path
+  scan_path="$(dc_default_scan_dir)/scan.json"
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --ids)
@@ -542,6 +563,10 @@ main() {
     requested="$(jq -r --arg p "$platform" '.rules[] | select(.tier == "safe" and (.platforms | index($p))) | .id' "$rules_file" 2>/dev/null || true)"
     requested="${requested//$'\r'/}"
   fi
+  if ! dc_scan_item_trusted "$(dirname -- "$scan_path")" "$scan_path"; then
+    printf 'Scan folder refused: %s or %s is a link, not owned by you or writable by others\n' "$(dirname -- "$scan_path")" "$scan_path" >&2
+    exit 3
+  fi
   log_path="$(resolve_log_path "$log_arg" "$scan_path")" || exit 3
   dc_load_rules "$rules_file" "$platform" >/dev/null || exit 4
   all_rules="$(jq -c '.rules' "$rules_file")"
@@ -562,6 +587,7 @@ main() {
   prot_rules="$(jq -c '[.[] | select(.allowDuplicateRemoval != true)]' <<<"$all_rules")"
   prot_paths="$(dc_critical_paths "$prot_rules" "$platform")"
   prot_names="$(dc_critical_names "$prot_rules" "$platform")"
+  protect_scan_folder "$(dirname -- "$scan_path")"
 
   local free_start free_end id rule before after decision out first detail result bytes action_type
   local failed=0 dry_total=0 line step_status

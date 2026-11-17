@@ -45,7 +45,7 @@ macOS and Linux (or the path the user named instead of `$HOME`):
 bash "${CLAUDE_SKILL_DIR}/scripts/scan.sh" --target "$HOME"
 ```
 
-- Output: `<drive>:\tmp\diskscan\scan.json` on Windows, `~/diskscan/scan.json` on macOS and Linux, never inside a Temp folder.
+- Output: `%LOCALAPPDATA%\diskscan\scan.json` on Windows, `${XDG_CACHE_HOME:-$HOME/.cache}/diskscan/scan.json` on macOS and Linux (a per-user folder, never inside a Temp folder). The scripts refuse a scan folder or scan.json that is a link, is owned by someone else or, on macOS and Linux, is writable by others.
 - macOS and Linux need `jq`. When the script exits 5, show its install hint in one line and stop.
 - The scan is read-only and prints one `Scan complete: ...` line.
 
@@ -72,13 +72,13 @@ Delete nothing before the user submits. Run only the submitted ids and never add
 Windows:
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/scripts/cleanup.ps1" -Ids <id1>,<id2> -ScanPath <drive>:/tmp/diskscan/scan.json
+powershell -NoProfile -ExecutionPolicy Bypass -File "${CLAUDE_SKILL_DIR}/scripts/cleanup.ps1" -Ids <id1>,<id2>
 ```
 
 macOS and Linux:
 
 ```
-bash "${CLAUDE_SKILL_DIR}/scripts/cleanup.sh" --ids <id1>,<id2> --scan-path "$HOME/diskscan/scan.json"
+bash "${CLAUDE_SKILL_DIR}/scripts/cleanup.sh" --ids <id1>,<id2>
 ```
 
 - The scripts refuse Critical and unknown ids. Report refused ids in one line.

@@ -281,7 +281,7 @@ Cleanup called with no ids is a dry run over the Safe ids for your OS. `-DryRun`
 
 | File | Windows | macOS and Linux |
 |---|---|---|
-| `scan.json` | `<drive>:\tmp\diskscan\scan.json` | `~/diskscan/scan.json` |
+| `scan.json` | `%LOCALAPPDATA%\diskscan\scan.json` | `${XDG_CACHE_HOME:-$HOME/.cache}/diskscan/scan.json` |
 | `cleanup.log` | next to `scan.json` | next to `scan.json` |
 
 The scan refuses an output folder inside a Temp folder, and a log path inside Temp falls back to the default. Change them with `-OutputDir` / `--output-dir` and `-LogPath` / `--log-path`. When you change the output folder, run cleanup with `-ScanPath` / `--scan-path` pointing at the new `scan.json`, because cleanup looks for it in the default folder.

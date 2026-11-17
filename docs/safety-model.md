@@ -47,6 +47,12 @@ The scan and cleanup exit with code 2 when `HOME` (macOS and Linux) or `USERPROF
 
 The scan refuses an output folder inside a Temp folder, and cleanup falls back to the default when the log path is inside Temp. If the default log path is also inside Temp or cannot be created, cleanup exits with code 3. The Temp folders are Windows `TEMP`, `TMP`, `%LOCALAPPDATA%\Temp` and `%SystemRoot%\Temp`, and on macOS and Linux `TMPDIR`, `/tmp`, `/var/tmp`, `/private/tmp` and `/private/var/folders`.
 
+## Scan folder
+
+The scan file steers what cleanup deletes, so it lives in a per-user folder outside Temp: `%LOCALAPPDATA%\diskscan` on Windows and `${XDG_CACHE_HOME:-$HOME/.cache}/diskscan` on macOS and Linux. Scan and cleanup exit with code 3 when the scan folder or `scan.json` is a link or reparse point, is not owned by the current user (on Windows `BUILTIN\Administrators` also counts), or on macOS and Linux is writable by group or others. A missing folder is created readable only by the user. Cleanup never deletes anything inside the scan folder, even when a rule such as `app-logs-oversized` matches a parent folder.
+
+Compacting a Docker disk runs `diskpart /s` elevated on a script file that exists only for that step. The file is created with `FileMode.CreateNew` (the step fails if the name is taken) inside the per-user scan folder, which is checked first and never trusted when it is a link or owned by someone else, is written as ASCII, is opened with `FileShare.Read` only while it is written and is deleted in a `finally` block.
+
 ## Duplicates
 
 - The scan groups large files by size, then compares SHA-256. Groups of two or more identical files are listed under `duplicates`.

@@ -137,9 +137,13 @@ function Test-ToolRuleInScope {
 function Get-CriticalSet {
     param(
         [object[]]$Rules,
-        [string]$Platform
+        [string]$Platform,
+        [string[]]$ExtraPaths = @()
     )
     $paths = [System.Collections.Generic.List[string]]::new()
+    foreach ($extra in $ExtraPaths) {
+        $paths.Add((ConvertTo-NormalizedPath -Path $extra))
+    }
     $namePatterns = [System.Collections.Generic.List[string]]::new()
     $criticalRules = @($Rules | Where-Object { $_.tier -eq 'critical' -and $_.platforms -contains $Platform })
     foreach ($rule in $criticalRules) {
@@ -359,6 +363,24 @@ function Test-IsTempPath {
         }
     }
     return $false
+}
+
+function Test-TrustedScanItem {
+    param([string]$Path)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return $true
+    }
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint) {
+        return $false
+    }
+    if ($PSVersionTable.PSEdition -eq 'Desktop') {
+        Import-Module Microsoft.PowerShell.Security -RequiredVersion 3.0.0.0 -ErrorAction SilentlyContinue
+    }
+    $owner = (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier])
+    $administrators = New-Object System.Security.Principal.SecurityIdentifier ([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid, $null)
+    $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+    return ($owner.Value -eq $currentUser.Value) -or ($owner.Value -eq $administrators.Value)
 }
 
 function Test-IsElevated {

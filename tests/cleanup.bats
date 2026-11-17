@@ -245,7 +245,7 @@ write_dup_scan() {
     IFS='|' read -r -a paths <<<"$paths_part"
     first_path="${paths[0]}"
     sha="$(. "$SCRIPTS/common.sh" && dc_sha256 "$first_path")"
-    obj="$(MSYS2_ARG_CONV_EXCL="*" jq -n -c --argjson b "$bytes" --arg s "$sha" '{bytes: $b, sha256: $s, paths: $ARGS.positional}' --args "${paths[@]}")"
+    obj="$(MSYS2_ARG_CONV_EXCL="*" jq -n -c --argjson b "$bytes" --arg s "$sha" '{bytes: $b, sha256: $s, paths: $ARGS.positional}' --args ${paths[@]+"${paths[@]}"})"
     objects="$objects$obj"$'\n'
   done
   local groups_json
@@ -777,4 +777,90 @@ seed_credentials_group() {
   run env HOME="$SANDBOX/h/home" TMPDIR="$SANDBOX/h" bash "$SCRIPTS/cleanup.sh" --scan-path "$SANDBOX/out/scan.json" --log-path "$SANDBOX/out/cleanup.log" --ids user-temp
   [ -e "$SANDBOX/h/home/Downloads/old.bin" ]
   [ -e "$SANDBOX/h/home/.bashrc" ]
+}
+
+@test "F1 a failing file listing fails the step instead of listing nothing" {
+  make_file "$TMPDIR/old.tmp" 10 202001010000
+  printf '. "%s/cleanup.sh"\ndc_list_files() { return 1; }\nmain "$@"\n' "$SCRIPTS" > "$SANDBOX/harness.sh"
+  run bash "$SANDBOX/harness.sh" --scan-path "$SANDBOX/out/scan.json" --log-path "$SANDBOX/out/cleanup.log" --ids user-temp
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed user-temp: step error"* ]]
+  [ -e "$TMPDIR/old.tmp" ]
+  run bash "$SANDBOX/harness.sh" --scan-path "$SANDBOX/out/scan.json" --log-path "$SANDBOX/out/cleanup.log" --ids user-temp --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed user-temp: step error"* ]]
+}
+
+@test "F1 leaves no staging file in TMPDIR after a delete run" {
+  make_file "$TMPDIR/old.tmp" 10 202001010000
+  run_cleanup --ids user-temp
+  [ "$status" -eq 0 ]
+  [ ! -e "$TMPDIR/old.tmp" ]
+  [ -z "$(find "$TMPDIR" -name 'dc-list.*')" ]
+}
+
+@test "F2 uses the per-user cache folder for the scan file and the log by default" {
+  run bash "$SCRIPTS/cleanup.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$XDG_CACHE_HOME/diskscan/cleanup.log" ]
+}
+
+@test "F2 falls back to HOME/.cache/diskscan when XDG_CACHE_HOME is unset" {
+  run env -u XDG_CACHE_HOME bash "$SCRIPTS/cleanup.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.cache/diskscan/cleanup.log" ]
+}
+
+@test "F2 refuses a scan folder that is a symlink with exit 3 before it writes anything" {
+  MSYS=winsymlinks:nativestrict ln -s "$SANDBOX/out" "$SANDBOX/linked" || skip "symlinks not available"
+  run bash "$SCRIPTS/cleanup.sh" --scan-path "$SANDBOX/linked/scan.json"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"Scan folder refused:"* ]]
+  run ls -A "$SANDBOX/out"
+  [ -z "$output" ]
+}
+
+@test "F2 refuses a scan folder that others can write with exit 3" {
+  chmod 777 "$SANDBOX/out"
+  [ -n "$(find "$SANDBOX/out" -maxdepth 0 -perm -002)" ] || skip "chmod has no effect on this platform"
+  run bash "$SCRIPTS/cleanup.sh" --scan-path "$SANDBOX/out/scan.json"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"Scan folder refused:"* ]]
+  run ls -A "$SANDBOX/out"
+  [ -z "$output" ]
+}
+
+@test "F2 never deletes an oversized log inside the scan folder while other oversized logs go" {
+  local fixture
+  fixture="$(fixture_rules '(.rules[] | select(.id == "app-logs-oversized") | .action.minSizeMB) = 1')"
+  make_file "$XDG_CACHE_HOME/diskscan/big.log" 2097152
+  make_file "$XDG_CACHE_HOME/otherapp/big.log" 2097152
+  run bash "$SCRIPTS/cleanup.sh" --ids app-logs-oversized --rules "$fixture"
+  [ "$status" -eq 0 ]
+  [ -e "$XDG_CACHE_HOME/diskscan/big.log" ]
+  [ ! -e "$XDG_CACHE_HOME/otherapp/big.log" ]
+}
+
+@test "CI2 I1 a group-writable umask does not make the scan folder refuse the next run" {
+  umask 002
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 0 ]
+  run bash "$SCRIPTS/cleanup.sh" --dry-run
+  [ "$status" -eq 0 ]
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 0 ]
+  [ -z "$(find "$XDG_CACHE_HOME/diskscan" -maxdepth 0 \( -perm -020 -o -perm -002 \))" ]
+  [ -z "$(find "$XDG_CACHE_HOME/diskscan/scan.json" -maxdepth 0 \( -perm -020 -o -perm -002 \))" ]
+}
+
+@test "CI2 m8 protects the scan folder when XDG_CACHE_HOME ends with a slash" {
+  local fixture
+  fixture="$(fixture_rules '(.rules[] | select(.id == "app-logs-oversized") | .action.minSizeMB) = 1')"
+  export XDG_CACHE_HOME="$HOME/.cache/"
+  make_file "$HOME/.cache/diskscan/big.log" 2097152
+  make_file "$HOME/.cache/otherapp/big.log" 2097152
+  run bash "$SCRIPTS/cleanup.sh" --ids app-logs-oversized --rules "$fixture"
+  [ "$status" -eq 0 ]
+  [ -e "$HOME/.cache/diskscan/big.log" ]
+  [ ! -e "$HOME/.cache/otherapp/big.log" ]
 }

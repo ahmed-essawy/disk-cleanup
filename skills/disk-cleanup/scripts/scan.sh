@@ -42,7 +42,7 @@ rule_entry_counts=()
 usage() {
   printf 'Usage: scan.sh [--target <path>] [--output-dir <path>] [--min-file-mb <n>] [--rules <path>] [--help]\n'
   printf "  --target       default \"\$HOME\"\n"
-  printf "  --output-dir   default \"\$HOME/diskscan\"\n"
+  printf "  --output-dir   default \"\${XDG_CACHE_HOME:-\$HOME/.cache}/diskscan\"\n"
   printf '  --min-file-mb  default 500, integer 1..1048576\n'
   printf '  --rules        default "<script dir>/../rules/rules.json"\n'
 }
@@ -409,7 +409,7 @@ scan_rule_summary() {
         [ -n "$p" ] || continue
         if ! dc_is_protected_target "$p" "$crit_paths" "$crit_names"; then
           if [ ${#inc_args[@]} -gt 0 ]; then
-            pb="$(dc_list_files "$p" "$rec" "$min_b" "$age" "$crit_paths" "$crit_names" "${inc_args[@]}" | dc_sum_file_bytes)"
+            pb="$(dc_list_files "$p" "$rec" "$min_b" "$age" "$crit_paths" "$crit_names" ${inc_args[@]+"${inc_args[@]}"} | dc_sum_file_bytes)"
           else
             pb="$(dc_list_files "$p" "$rec" "$min_b" "$age" "$crit_paths" "$crit_names" | dc_sum_file_bytes)"
           fi
@@ -448,7 +448,7 @@ scan_rule_summary() {
             grp_paths[${#grp_paths[@]}]="$gp"
           done < <(jq -r '.paths[]' <<<"$dline")
           if [ ${#grp_paths[@]} -gt 0 ]; then
-            del_count="$(dc_dedupe_deletions "$prot_paths" "$prot_names" "${grp_paths[@]}" | grep -c . || true)"
+            del_count="$(dc_dedupe_deletions "$prot_paths" "$prot_names" ${grp_paths[@]+"${grp_paths[@]}"} | grep -c . || true)"
             rule_bytes=$(( rule_bytes + d_bytes * del_count ))
           fi
         done < "$work_dir/dups.ndjson"
@@ -493,7 +493,7 @@ main() {
   export DC_PLATFORM="$platform"
   dc_canonicalize_env || fail_arg "HOME is not a canonical absolute path: ${HOME-}"
   target="$HOME"
-  output_dir="$HOME/diskscan"
+  output_dir="$(dc_default_scan_dir)"
   parse_args "$@"
   [[ "$min_file_mb" =~ ^[0-9]+$ ]] || fail_arg "min-file-mb must be an integer from 1 to 1048576"
   [ "$min_file_mb" -ge 1 ] && [ "$min_file_mb" -le "$MAX_MIN_FILE_MB" ] || fail_arg "min-file-mb must be an integer from 1 to 1048576"
@@ -512,7 +512,12 @@ main() {
     exit 3
   fi
 
-  if ! mkdir -p "$output_dir" 2>/dev/null; then
+  if ! dc_scan_item_trusted "$output_dir" "$output_dir/scan.json"; then
+    printf 'Output folder refused: %s or its scan.json is a link, not owned by you or writable by others\n' "$output_dir" >&2
+    exit 3
+  fi
+
+  if ! dc_make_private_dir "$output_dir"; then
     printf 'Cannot create output folder: %s\n' "$output_dir" >&2
     exit 3
   fi
@@ -554,7 +559,7 @@ main() {
   df_info="$(df -Pk "$target" | awk 'NR==2{printf "%s\t%.0f\t%.0f\t%.0f\n", $6, $2*1024, $3*1024, $4*1024}')"
   IFS="$tab" read -r drive_root drive_total drive_used drive_free <<<"$df_info"
 
-  jq -n \
+  ( umask 077; jq -n \
     --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg os "$platform" \
     --arg target "$target" \
@@ -582,7 +587,7 @@ main() {
       largeFiles: ($largeFiles | sort_by(-.bytes)),
       duplicates: $duplicates,
       unreadable: ($unreadable | split("\n") | map(select(length > 0)))
-    }' > "$output_dir/scan.json"
+    }' > "$output_dir/scan.json" )
 
   local counts n_folders n_large n_dups n_unread
   counts="$(jq -r '[(.folders | length), (.largeFiles | length), (.duplicates | length), (.unreadable | length)] | @tsv' "$output_dir/scan.json")"

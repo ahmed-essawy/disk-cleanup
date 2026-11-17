@@ -1,7 +1,9 @@
 sandbox_setup() {
+  umask 022
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SANDBOX="$BATS_TEST_DIRNAME/.sandbox/$(date +%s)$$$RANDOM"
-  mkdir -p "${SANDBOX}/home/tmp" "${SANDBOX}/bin" "${SANDBOX}/out"
+  mkdir -p "${SANDBOX}/home/tmp" "${SANDBOX}/bin"
+  ( umask 077 && mkdir -p "${SANDBOX}/out" )
   export SANDBOX
   export REPO_ROOT
   export SCRIPTS="$REPO_ROOT/skills/disk-cleanup/scripts"
@@ -66,7 +68,7 @@ tree_snapshot() {
   else
     fmt=(-f '%N|%z|%m')
   fi
-  find "$SANDBOX" \( -path "$SANDBOX/out" -o -path "$SANDBOX/stub.log" \) -prune -o -print0 | xargs -0 stat "${fmt[@]}" | LC_ALL=C sort
+  find "$SANDBOX" \( -path "$SANDBOX/out" -o -path "$SANDBOX/stub.log" \) -prune -o -print0 | xargs -0 stat ${fmt[@]+"${fmt[@]}"} | LC_ALL=C sort
 }
 
 stub_calls() {

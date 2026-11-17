@@ -414,11 +414,16 @@ $targetPath = ConvertTo-NormalizedPath $Target
 $outputPath = if ($OutputDir -ne '') {
     ConvertTo-NormalizedPath $OutputDir
 } else {
-    ConvertTo-NormalizedPath (Join-Path ([System.IO.Path]::GetPathRoot($targetPath)) 'tmp\diskscan')
+    ConvertTo-NormalizedPath (Join-Path $env:LOCALAPPDATA 'diskscan')
 }
 
 if (Test-IsTempPath -Path $outputPath) {
     [Console]::Error.WriteLine("Output folder refused: $outputPath is inside a Temp folder")
+    exit 3
+}
+
+if (-not ((Test-TrustedScanItem -Path $outputPath) -and (Test-TrustedScanItem -Path (Join-Path $outputPath 'scan.json')))) {
+    [Console]::Error.WriteLine("Output folder refused: $outputPath or its scan.json is a link or not owned by the current user")
     exit 3
 }
 

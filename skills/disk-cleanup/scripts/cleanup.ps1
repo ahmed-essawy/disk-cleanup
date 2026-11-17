@@ -3,7 +3,7 @@ param(
     [string[]]$Ids,
     [switch]$DryRun,
     [string]$LogPath,
-    [string]$ScanPath = "$env:SystemDrive\tmp\diskscan\scan.json",
+    [string]$ScanPath = "$env:LOCALAPPDATA\diskscan\scan.json",
     [string]$RulesPath
 )
 
@@ -710,19 +710,34 @@ function Invoke-DockerShutdown {
     return $false
 }
 
+function Write-DiskpartScript {
+    param(
+        [string]$Path,
+        [string]$Disk
+    )
+    $lines = @("select vdisk file=""$Disk""", 'attach vdisk readonly', 'compact vdisk', 'detach vdisk', 'exit')
+    $bytes = [System.Text.Encoding]::ASCII.GetBytes((($lines -join "`r`n") + "`r`n"))
+    $stream = New-Object System.IO.FileStream($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 function Invoke-DiskpartCompact {
     param(
         [string]$Disk,
-        [string]$ScriptPath
+        [string]$ScanFolder
     )
     $ErrorActionPreference = 'Continue'
-    $lines = @("select vdisk file=""$Disk""", 'attach vdisk readonly', 'compact vdisk', 'detach vdisk')
+    $scriptPath = Join-Path $ScanFolder 'diskpart-compact.txt'
+    Write-DiskpartScript -Path $scriptPath -Disk $Disk
     try {
-        [System.IO.File]::WriteAllLines($ScriptPath, $lines, [System.Text.Encoding]::ASCII)
-        $null = & diskpart /s $ScriptPath 2>&1
+        $null = & diskpart /s $scriptPath 2>&1
         return [int]$LASTEXITCODE
     } finally {
-        [System.IO.File]::Delete($ScriptPath)
+        [System.IO.File]::Delete($scriptPath)
     }
 }
 
@@ -750,10 +765,13 @@ function Invoke-CompactVhdxAction {
     if (-not (Invoke-DockerShutdown)) {
         return (Get-ActionResult -Result 'failed' -Detail 'Docker Desktop still running')
     }
-    $scriptPath = Join-Path $Context.ScanFolder 'diskpart-compact.txt'
     try {
         foreach ($disk in $disks) {
-            $code = Invoke-DiskpartCompact -Disk $disk -ScriptPath $scriptPath
+            try {
+                $code = Invoke-DiskpartCompact -Disk $disk -ScanFolder $Context.ScanFolder
+            } catch [System.IO.IOException] {
+                return (Get-ActionResult -Result 'failed' -Detail "diskpart script not created: $($_.Exception.Message)")
+            }
             if ($code -ne 0) {
                 return (Get-ActionResult -Result 'failed' -Detail "diskpart exit $code")
             }
@@ -873,6 +891,14 @@ if (-not (Test-UserProfileCanonical)) {
     [Console]::Error.WriteLine("Invalid argument: USERPROFILE is not a canonical existing folder: $env:USERPROFILE")
     exit 2
 }
+if (-not [string]::IsNullOrEmpty($ScanPath)) {
+    $scanParentPath = Split-Path -Parent $ScanPath
+    $scanFolderTrusted = [string]::IsNullOrEmpty($scanParentPath) -or (Test-TrustedScanItem -Path $scanParentPath)
+    if (-not ($scanFolderTrusted -and (Test-TrustedScanItem -Path $ScanPath))) {
+        [Console]::Error.WriteLine("Scan folder refused: $scanParentPath or $ScanPath is a link or not owned by the current user")
+        exit 3
+    }
+}
 $actualLogPath = Resolve-LogPath -LogPath $LogPath -ScanPath $ScanPath
 
 try {
@@ -908,9 +934,10 @@ if (-not [string]::IsNullOrEmpty($ScanPath) -and (Test-Path -LiteralPath $ScanPa
 $scanFolder = if (-not [string]::IsNullOrEmpty($ScanPath)) { Split-Path -Parent $ScanPath } else { '' }
 $logFolder = Split-Path -Parent $actualLogPath
 $nullDir = Join-Path $logFolder '.robocopy-null'
-$criticalSet = Get-CriticalSet -Rules $allRules -Platform $platform
+$scanFolderGuard = if ([string]::IsNullOrEmpty($scanFolder)) { @() } else { @($scanFolder) }
+$criticalSet = Get-CriticalSet -Rules $allRules -Platform $platform -ExtraPaths $scanFolderGuard
 $protectedRules = @($allRules | Where-Object { $_.allowDuplicateRemoval -ne $true })
-$protectedSet = Get-CriticalSet -Rules $protectedRules -Platform $platform
+$protectedSet = Get-CriticalSet -Rules $protectedRules -Platform $platform -ExtraPaths $scanFolderGuard
 $freeRoot = if (-not [string]::IsNullOrEmpty($scanTarget)) { $scanTarget } else { $env:USERPROFILE }
 
 $Context = [pscustomobject]@{

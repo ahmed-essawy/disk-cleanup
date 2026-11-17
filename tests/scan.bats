@@ -272,3 +272,58 @@ run_scan_env() {
   [ "$status" -eq 0 ]
   jq -e --arg h "$HOME" '.home == $h' "$SCAN"
 }
+
+@test "F2 writes scan.json to the per-user cache folder by default" {
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 0 ]
+  [ -f "$XDG_CACHE_HOME/diskscan/scan.json" ]
+  [[ "$output" == *"$XDG_CACHE_HOME/diskscan/scan.json"* ]]
+  [ -z "$(find "$XDG_CACHE_HOME/diskscan" -maxdepth 0 \( -perm -020 -o -perm -002 \))" ]
+}
+
+@test "F2 falls back to HOME/.cache/diskscan when XDG_CACHE_HOME is unset or relative" {
+  run --separate-stderr env -u XDG_CACHE_HOME bash "$SCRIPTS/scan.sh" --target "$HOME" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.cache/diskscan/scan.json" ]
+  rm -rf "$HOME/.cache/diskscan"
+  run --separate-stderr env XDG_CACHE_HOME=relative/cache bash "$SCRIPTS/scan.sh" --target "$HOME" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/.cache/diskscan/scan.json" ]
+}
+
+@test "F2 refuses an output folder that is a symlink with exit 3" {
+  MSYS=winsymlinks:nativestrict ln -s "$SANDBOX/out" "$SANDBOX/linked" || skip "symlinks not available"
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --output-dir "$SANDBOX/linked" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 3 ]
+  [[ "$stderr" == *"Output folder refused:"* ]]
+  run ls -A "$SANDBOX/out"
+  [ -z "$output" ]
+}
+
+@test "F2 refuses a scan.json that is a symlink with exit 3" {
+  make_file "$SANDBOX/elsewhere.json" 2
+  MSYS=winsymlinks:nativestrict ln -s "$SANDBOX/elsewhere.json" "$SANDBOX/out/scan.json" || skip "symlinks not available"
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --output-dir "$SANDBOX/out" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 3 ]
+  [ "$(wc -c < "$SANDBOX/elsewhere.json" | tr -d ' ')" = "2" ]
+}
+
+@test "F2 refuses an output folder that others can write with exit 3" {
+  chmod 777 "$SANDBOX/out"
+  [ -n "$(find "$SANDBOX/out" -maxdepth 0 -perm -002)" ] || skip "chmod has no effect on this platform"
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --output-dir "$SANDBOX/out" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 3 ]
+  [[ "$stderr" == *"Output folder refused:"* ]]
+  run ls -A "$SANDBOX/out"
+  [ -z "$output" ]
+}
+
+@test "F2 creates a missing output folder readable only by the user" {
+  ( umask 077 && mkdir "$SANDBOX/probe" )
+  [ -n "$(find "$SANDBOX/probe" -maxdepth 0 -perm -700)" ] || skip "umask has no effect on this platform"
+  [ -z "$(find "$SANDBOX/probe" -maxdepth 0 -perm -040)" ] || skip "umask has no effect on this platform"
+  run --separate-stderr bash "$SCRIPTS/scan.sh" --target "$HOME" --output-dir "$SANDBOX/fresh/diskscan" --min-file-mb 1 --rules "$RULES"
+  [ "$status" -eq 0 ]
+  [ -f "$SANDBOX/fresh/diskscan/scan.json" ]
+  [ -z "$(find "$SANDBOX/fresh/diskscan" -maxdepth 0 \( -perm -040 -o -perm -020 -o -perm -010 -o -perm -004 -o -perm -002 -o -perm -001 \))" ]
+}

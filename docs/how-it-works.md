@@ -29,7 +29,7 @@ scan.sh [--target <path>] [--output-dir <path>] [--min-file-mb <n>] [--rules <pa
 | Parameter (Windows / macOS and Linux) | Default | Meaning |
 |---|---|---|
 | `-Target` / `--target` | `$env:SystemDrive\` / `$HOME` | folder or drive root to scan; it must exist |
-| `-OutputDir` / `--output-dir` | `<qualifier of Target>\tmp\diskscan` / `$HOME/diskscan` | folder that receives `scan.json` |
+| `-OutputDir` / `--output-dir` | `$env:LOCALAPPDATA\diskscan` / `${XDG_CACHE_HOME:-$HOME/.cache}/diskscan` | folder that receives `scan.json` |
 | `-MinFileMB` / `--min-file-mb` | 500 | size from which a file is listed as a large file, integer from 1 to 1048576 |
 | `-RulesPath` / `--rules` | `rules/rules.json` next to the scripts | rules file to use |
 
@@ -52,7 +52,7 @@ Scan complete: <full path of scan.json> (<n> folders, <m> large files, <k> dupli
 |---|---|---|
 | 0 | `scan.json` written (also when some folders were unreadable) | none |
 | 2 | invalid argument, target missing, `HOME` or `USERPROFILE` not a canonical existing folder, unsupported OS | `Invalid argument: <detail>` or `Unsupported OS: <name>` |
-| 3 | output folder inside Temp, or it cannot be created | `Output folder refused: <path> is inside a Temp folder` or `Cannot create output folder: <path>` |
+| 3 | output folder inside Temp, it cannot be created, or it is untrusted (a link, not owned by you, or on macOS and Linux writable by others) | `Output folder refused: <path> is inside a Temp folder`, `Output folder refused: <path> or its scan.json ...` or `Cannot create output folder: <path>` |
 | 4 | rules file missing or not valid JSON, or a rule lacks `id` or `tier` | `Rules file invalid: <path>` |
 | 5 | missing dependency (macOS and Linux: `jq`) | an install hint |
 
@@ -103,7 +103,7 @@ cleanup.sh [--ids <a,b,c>] [--dry-run] [--log-path <path>] [--scan-path <path>] 
 | `-Ids` / `--ids` | none | rule ids to run; a comma list is accepted |
 | `-DryRun` / `--dry-run` | off | report what each step would do and delete nothing |
 | `-LogPath` / `--log-path` | `cleanup.log` in the folder of the scan file | log file |
-| `-ScanPath` / `--scan-path` | `$env:SystemDrive\tmp\diskscan\scan.json` / `$HOME/diskscan/scan.json` | scan file to read |
+| `-ScanPath` / `--scan-path` | `$env:LOCALAPPDATA\diskscan\scan.json` / `${XDG_CACHE_HOME:-$HOME/.cache}/diskscan/scan.json` | scan file to read |
 | `-RulesPath` / `--rules` | `rules/rules.json` next to the scripts | rules file to use |
 
 Ids are trimmed, split on commas, emptied of blanks and de-duplicated. With no ids, cleanup runs a dry run over every Safe rule for the current OS, even without `-DryRun`.
@@ -146,7 +146,7 @@ The `Skipped` and `Refused` lines appear only when they are not empty. On macOS 
 | 0 | no step failed (refused, skipped, not-applicable and dry-run steps are not failures) |
 | 1 | at least one step `failed` |
 | 2 | invalid argument, `HOME` or `USERPROFILE` not a canonical existing folder, or unsupported OS |
-| 3 | no usable log path (`No usable log path: <path>`) |
+| 3 | no usable log path (`No usable log path: <path>`), or an untrusted scan folder or scan file (`Scan folder refused: ...`) |
 | 4 | rules file missing or invalid |
 | 5 | missing dependency (macOS and Linux: `jq`) |
 
