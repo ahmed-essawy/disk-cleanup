@@ -1,0 +1,17 @@
+{
+  "name": "disk-cleanup",
+  "owner": {
+    "name": "Ahmed M. Essawy",
+    "email": "ahm.elessawy@gmail.com"
+  },
+  "metadata": {
+    "description": "Marketplace for the disk-cleanup Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "disk-cleanup",
+      "source": "./",
+      "description": "Safe, checklist based disk cleanup for Windows, macOS and Linux."
+    }
+  ]
+}

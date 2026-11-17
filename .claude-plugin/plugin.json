@@ -1,0 +1,14 @@
+{
+  "name": "disk-cleanup",
+  "version": "1.0.0",
+  "description": "Scan a drive for what is using disk space, review one Safe, Your call and Critical checklist, and clean only the items you tick.",
+  "author": {
+    "name": "Ahmed M. Essawy",
+    "email": "ahm.elessawy@gmail.com",
+    "url": "https://github.com/ahmed-essawy"
+  },
+  "homepage": "https://github.com/ahmed-essawy/disk-cleanup",
+  "repository": "https://github.com/ahmed-essawy/disk-cleanup",
+  "license": "MIT",
+  "keywords": ["disk", "cleanup", "storage", "windows", "macos", "linux"]
+}
