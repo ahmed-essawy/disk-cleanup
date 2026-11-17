@@ -1,0 +1,753 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "user-temp",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${TEMP}"],
+        "macos": ["${TMPDIR}"],
+        "linux": ["${TMPDIR}"]
+      },
+      "action": {
+        "type": "delete-files",
+        "include": ["*"],
+        "recurse": true,
+        "minSizeMB": 0,
+        "olderThanDays": 1
+      },
+      "needsAdmin": false,
+      "description": "User Temp files older than 1 day",
+      "reason": "Temporary files that apps recreate. Files newer than 1 day and locked files are kept."
+    },
+    {
+      "id": "nuget-cache",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${USERPROFILE}/.nuget/packages",
+          "${LOCALAPPDATA}/NuGet/v3-cache",
+          "${LOCALAPPDATA}/NuGet/plugins-cache"
+        ],
+        "macos": [
+          "${HOME}/.nuget/packages",
+          "${HOME}/.local/share/NuGet/v3-cache",
+          "${HOME}/.local/share/NuGet/plugins-cache"
+        ],
+        "linux": [
+          "${HOME}/.nuget/packages",
+          "${HOME}/.local/share/NuGet/v3-cache",
+          "${HOME}/.local/share/NuGet/plugins-cache"
+        ]
+      },
+      "action": {
+        "type": "tool",
+        "command": "dotnet",
+        "args": ["nuget", "locals", "all", "--clear"]
+      },
+      "needsAdmin": false,
+      "description": "NuGet package caches",
+      "reason": "Downloaded packages that dotnet restores again on the next build."
+    },
+    {
+      "id": "npm-cache",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}/npm-cache"],
+        "macos": ["${HOME}/.npm/_cacache"],
+        "linux": ["${HOME}/.npm/_cacache"]
+      },
+      "action": {
+        "type": "tool",
+        "command": "npm",
+        "args": ["cache", "clean", "--force"]
+      },
+      "needsAdmin": false,
+      "description": "npm cache",
+      "reason": "Cached npm downloads that npm fetches again when needed by a project."
+    },
+    {
+      "id": "yarn-cache",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}/Yarn/Cache"],
+        "macos": ["${HOME}/Library/Caches/Yarn"],
+        "linux": ["${HOME}/.cache/yarn"]
+      },
+      "action": {
+        "type": "tool",
+        "command": "yarn",
+        "args": ["cache", "clean"]
+      },
+      "needsAdmin": false,
+      "description": "Yarn cache",
+      "reason": "Cached Yarn packages that Yarn downloads again on the next install."
+    },
+    {
+      "id": "pip-cache",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}/pip/cache"],
+        "macos": ["${HOME}/Library/Caches/pip"],
+        "linux": ["${HOME}/.cache/pip"]
+      },
+      "action": {
+        "type": "tool",
+        "command": "pip",
+        "args": ["cache", "purge"]
+      },
+      "needsAdmin": false,
+      "description": "pip cache",
+      "reason": "Cached Python downloads that pip fetches again on the next install."
+    },
+    {
+      "id": "gradle-cache",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${USERPROFILE}/.gradle/caches"],
+        "macos": ["${HOME}/.gradle/caches"],
+        "linux": ["${HOME}/.gradle/caches"]
+      },
+      "action": {
+        "type": "clear-dir"
+      },
+      "before": [
+        {
+          "command": "gradle",
+          "args": ["--stop"]
+        }
+      ],
+      "needsAdmin": false,
+      "description": "Gradle caches",
+      "reason": "Build caches and downloaded dependencies that Gradle rebuilds. Gradle daemons are stopped first."
+    },
+    {
+      "id": "maven-repository",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${USERPROFILE}/.m2/repository"],
+        "macos": ["${HOME}/.m2/repository"],
+        "linux": ["${HOME}/.m2/repository"]
+      },
+      "action": {
+        "type": "clear-dir"
+      },
+      "needsAdmin": false,
+      "description": "Maven local repository",
+      "reason": "Downloaded artifacts that Maven fetches again on the next build."
+    },
+    {
+      "id": "windows-update-cache",
+      "tier": "safe",
+      "platforms": ["windows"],
+      "match": {
+        "windows": ["${SystemRoot}/SoftwareDistribution/Download"]
+      },
+      "action": {
+        "type": "clear-dir"
+      },
+      "needsAdmin": true,
+      "description": "Windows Update download cache",
+      "reason": "Update files that Windows Update downloads again if it still needs them. Needs admin."
+    },
+    {
+      "id": "dism-component-cleanup",
+      "tier": "safe",
+      "platforms": ["windows"],
+      "match": {
+        "windows": []
+      },
+      "action": {
+        "type": "tool",
+        "command": "dism",
+        "args": ["/Online", "/Cleanup-Image", "/StartComponentCleanup"]
+      },
+      "needsAdmin": true,
+      "description": "Windows component store cleanup (DISM)",
+      "reason": "Removes superseded Windows components with the supported Windows tool. Needs admin."
+    },
+    {
+      "id": "crash-dumps",
+      "tier": "safe",
+      "platforms": ["windows", "macos"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}/CrashDumps"],
+        "macos": ["${HOME}/Library/Logs/DiagnosticReports"]
+      },
+      "action": {
+        "type": "delete-files",
+        "include": ["*.dmp", "*.hdmp", "*.ips", "*.crash"],
+        "recurse": false,
+        "minSizeMB": 0,
+        "olderThanDays": 0
+      },
+      "needsAdmin": false,
+      "description": "Crash dumps and crash reports",
+      "reason": "Diagnostic files written after a crash. Apps do not need them to run."
+    },
+    {
+      "id": "app-logs-oversized",
+      "tier": "safe",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}", "${APPDATA}"],
+        "macos": ["${HOME}/Library/Logs", "${HOME}/Library/Application Support"],
+        "linux": ["${HOME}/.cache", "${HOME}/.local/state", "${HOME}/.config"]
+      },
+      "action": {
+        "type": "delete-files",
+        "include": ["*.log"],
+        "recurse": true,
+        "minSizeMB": 100,
+        "olderThanDays": 0
+      },
+      "needsAdmin": false,
+      "description": "App log files of 100 MB or more",
+      "reason": "Oversized logs written by apps. Apps start a new log file when they need one."
+    },
+    {
+      "id": "exact-duplicates",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [],
+        "macos": [],
+        "linux": []
+      },
+      "action": {
+        "type": "dedupe"
+      },
+      "needsAdmin": false,
+      "description": "Exact duplicate large files",
+      "reason": "Byte identical copies. The oldest copy stays and copies in protected folders are never deleted."
+    },
+    {
+      "id": "docker-dangling-images",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [],
+        "macos": [],
+        "linux": []
+      },
+      "action": {
+        "type": "tool",
+        "command": "docker",
+        "args": ["image", "prune", "-f"]
+      },
+      "needsAdmin": false,
+      "description": "Docker dangling images",
+      "reason": "Untagged image layers that no container uses. Rebuilding or downloading them takes time."
+    },
+    {
+      "id": "docker-build-cache",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [],
+        "macos": [],
+        "linux": []
+      },
+      "action": {
+        "type": "tool",
+        "command": "docker",
+        "args": ["builder", "prune", "-a", "-f"]
+      },
+      "needsAdmin": false,
+      "description": "Docker build cache",
+      "reason": "Cached build layers. The next build is slower; no image, container or volume is removed."
+    },
+    {
+      "id": "docker-wsl-compact",
+      "tier": "your_call",
+      "platforms": ["windows"],
+      "match": {
+        "windows": [
+          "${LOCALAPPDATA}/Docker/wsl/disk/docker_data.vhdx",
+          "${LOCALAPPDATA}/Docker/wsl/data/ext4.vhdx"
+        ]
+      },
+      "action": {
+        "type": "compact-docker-vhdx"
+      },
+      "needsAdmin": true,
+      "description": "Compact the Docker Desktop WSL disk",
+      "reason": "Gives free space inside the Docker disk back to Windows. Docker Desktop and WSL stop during the step."
+    },
+    {
+      "id": "ide-old-extensions",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${USERPROFILE}/.vscode/extensions",
+          "${USERPROFILE}/.vscode-insiders/extensions"
+        ],
+        "macos": [
+          "${HOME}/.vscode/extensions",
+          "${HOME}/.vscode-insiders/extensions"
+        ],
+        "linux": [
+          "${HOME}/.vscode/extensions",
+          "${HOME}/.vscode-insiders/extensions"
+        ]
+      },
+      "action": {
+        "type": "old-versions"
+      },
+      "needsAdmin": false,
+      "description": "Old VS Code extension versions",
+      "reason": "Older copies kept after an update. The newest version of each extension stays."
+    },
+    {
+      "id": "android-system-images",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}/Android/Sdk/system-images"],
+        "macos": ["${HOME}/Library/Android/sdk/system-images"],
+        "linux": ["${HOME}/Android/Sdk/system-images"]
+      },
+      "action": {
+        "type": "clear-dir"
+      },
+      "needsAdmin": false,
+      "description": "Android emulator system images",
+      "reason": "Downloadable again with the SDK manager. Emulator user data (AVDs) is not touched."
+    },
+    {
+      "id": "chrome-on-device-model",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${LOCALAPPDATA}/Google/Chrome/User Data/OptGuideOnDeviceModel"],
+        "macos": ["${HOME}/Library/Application Support/Google/Chrome/OptGuideOnDeviceModel"],
+        "linux": ["${HOME}/.config/google-chrome/OptGuideOnDeviceModel"]
+      },
+      "action": {
+        "type": "clear-dir"
+      },
+      "needsAdmin": false,
+      "description": "Chrome on-device AI model",
+      "reason": "Chrome downloads the model again if the feature is used."
+    },
+    {
+      "id": "claude-session-logs",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${USERPROFILE}/.claude/projects"],
+        "macos": ["${HOME}/.claude/projects"],
+        "linux": ["${HOME}/.claude/projects"]
+      },
+      "action": {
+        "type": "delete-files",
+        "include": ["*.jsonl"],
+        "recurse": true,
+        "minSizeMB": 0,
+        "olderThanDays": 30
+      },
+      "needsAdmin": false,
+      "description": "Claude Code session logs older than 30 days",
+      "reason": "Old conversation transcripts. The history of those sessions is lost."
+    },
+    {
+      "id": "old-installers",
+      "tier": "your_call",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["${USERPROFILE}/Downloads"],
+        "macos": ["${HOME}/Downloads"],
+        "linux": ["${HOME}/Downloads"]
+      },
+      "action": {
+        "type": "delete-files",
+        "include": [
+          "*.exe",
+          "*.msi",
+          "*.dmg",
+          "*.pkg",
+          "*.deb",
+          "*.rpm",
+          "*.AppImage",
+          "*.iso"
+        ],
+        "recurse": false,
+        "minSizeMB": 0,
+        "olderThanDays": 30
+      },
+      "needsAdmin": false,
+      "description": "Installers in Downloads older than 30 days",
+      "reason": "Setup files you may still want. Most can be downloaded again."
+    },
+    {
+      "id": "database-files",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["**/*.mdf", "**/*.ldf", "**/*.ndf"],
+        "macos": ["**/*.mdf", "**/*.ldf", "**/*.ndf"],
+        "linux": ["**/*.mdf", "**/*.ldf", "**/*.ndf"]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Database data and log files (.mdf, .ldf, .ndf)",
+      "reason": "Live database files. Deleting them loses data."
+    },
+    {
+      "id": "database-data-dirs",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${ProgramFiles}/Microsoft SQL Server",
+          "${ProgramFiles}/PostgreSQL",
+          "${ProgramFiles}/MySQL",
+          "${ProgramData}/MySQL"
+        ],
+        "macos": [
+          "/opt/homebrew/var/postgresql*",
+          "/opt/homebrew/var/mysql",
+          "/usr/local/var/postgres*",
+          "/usr/local/var/mysql",
+          "${HOME}/Library/Application Support/Postgres"
+        ],
+        "linux": [
+          "/var/lib/postgresql",
+          "/var/lib/mysql",
+          "/var/lib/mssql"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "PostgreSQL, MySQL and SQL Server data folders",
+      "reason": "Live database storage. Deleting it loses data."
+    },
+    {
+      "id": "database-maintenance",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [],
+        "macos": [],
+        "linux": []
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Database recovery model changes and file shrinks",
+      "reason": "Changes database behavior and can break backups. This tool never does it."
+    },
+    {
+      "id": "database-backups",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["**/*.bak"],
+        "macos": ["**/*.bak"],
+        "linux": ["**/*.bak"]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "allowDuplicateRemoval": true,
+      "description": "Database backups (.bak)",
+      "reason": "May be the only backup. Only an identical duplicate copy can be removed, by the duplicate rule."
+    },
+    {
+      "id": "docker-data",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${ProgramData}/Docker",
+          "${LOCALAPPDATA}/Docker/wsl/distro"
+        ],
+        "macos": [
+          "${HOME}/Library/Containers/com.docker.docker"
+        ],
+        "linux": [
+          "/var/lib/docker"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Docker volumes, containers and engine data",
+      "reason": "Holds volumes and stopped containers with user data. Volume removal and system prune are never run."
+    },
+    {
+      "id": "vm-disks",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "**/*.vhdx",
+          "**/*.vhd",
+          "**/*.vmdk",
+          "**/*.qcow2",
+          "**/*.vdi",
+          "${APPDATA}/Claude/vm_bundles"
+        ],
+        "macos": [
+          "**/*.vhdx",
+          "**/*.vhd",
+          "**/*.vmdk",
+          "**/*.qcow2",
+          "**/*.vdi",
+          "${HOME}/Library/Application Support/Claude/vm_bundles"
+        ],
+        "linux": [
+          "**/*.vhdx",
+          "**/*.vhd",
+          "**/*.vmdk",
+          "**/*.qcow2",
+          "**/*.vdi"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Virtual machine disks and WSL distros",
+      "reason": "Whole operating systems and their data live in these files."
+    },
+    {
+      "id": "restore-points",
+      "tier": "critical",
+      "platforms": ["windows"],
+      "match": {
+        "windows": ["${SystemDrive}/System Volume Information"]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "System Restore points and shadow copies",
+      "reason": "Recovery data managed by Windows. Removing it removes rollback options."
+    },
+    {
+      "id": "pagefile-hibernation",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${SystemDrive}/pagefile.sys",
+          "${SystemDrive}/hiberfil.sys",
+          "${SystemDrive}/swapfile.sys"
+        ],
+        "macos": [
+          "/private/var/vm"
+        ],
+        "linux": [
+          "/swapfile"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Page file, swap and hibernation files",
+      "reason": "Managed by the operating system. Turning hibernation off is a system setting change."
+    },
+    {
+      "id": "windows-system",
+      "tier": "critical",
+      "platforms": ["windows"],
+      "match": {
+        "windows": [
+          "${SystemRoot}/System32",
+          "${SystemRoot}/SysWOW64",
+          "${SystemRoot}/WinSxS",
+          "${SystemRoot}/Installer",
+          "${SystemRoot}/servicing",
+          "${SystemRoot}/Boot",
+          "${SystemRoot}/Fonts"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Windows system folders",
+      "reason": "Operating system files. Deleting them can stop Windows from starting."
+    },
+    {
+      "id": "program-files",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${ProgramFiles}",
+          "${ProgramFiles(x86)}"
+        ],
+        "macos": [
+          "/Applications",
+          "/System",
+          "/Library",
+          "/usr"
+        ],
+        "linux": [
+          "/usr",
+          "/etc",
+          "/boot",
+          "/opt",
+          "/var/lib"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Installed programs and system folders",
+      "reason": "Installed software and system files. Use the app's own uninstaller instead."
+    },
+    {
+      "id": "programdata-apps",
+      "tier": "critical",
+      "platforms": ["windows"],
+      "match": {
+        "windows": ["${ProgramData}"]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "ProgramData app data",
+      "reason": "Shared app data and settings. Apps can stop working without it."
+    },
+    {
+      "id": "mail-stores",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": ["**/*.ost", "**/*.pst"],
+        "macos": ["**/*.ost", "**/*.pst"],
+        "linux": ["**/*.ost", "**/*.pst"]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Mail stores (.ost, .pst)",
+      "reason": "Mail data. A .pst file can be the only copy of the messages."
+    },
+    {
+      "id": "user-folders",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${USERPROFILE}/Documents",
+          "${USERPROFILE}/Desktop",
+          "${USERPROFILE}/Pictures",
+          "${USERPROFILE}/Videos",
+          "${USERPROFILE}/Music"
+        ],
+        "macos": [
+          "${HOME}/Documents",
+          "${HOME}/Desktop",
+          "${HOME}/Pictures",
+          "${HOME}/Movies",
+          "${HOME}/Music"
+        ],
+        "linux": [
+          "${HOME}/Documents",
+          "${HOME}/Desktop",
+          "${HOME}/Pictures",
+          "${HOME}/Videos",
+          "${HOME}/Music"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Documents, Desktop, Pictures, Videos and Music",
+      "reason": "Personal files."
+    },
+    {
+      "id": "cloud-sync",
+      "tier": "critical",
+      "platforms": ["windows", "macos"],
+      "match": {
+        "windows": [
+          "${OneDrive}",
+          "${OneDriveCommercial}",
+          "${USERPROFILE}/OneDrive*"
+        ],
+        "macos": [
+          "${HOME}/Library/Mobile Documents",
+          "${HOME}/Library/CloudStorage"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "OneDrive and iCloud folders",
+      "reason": "Synced files. Deleting them can delete them on every device."
+    },
+    {
+      "id": "source-code",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "**/.git",
+          "${USERPROFILE}/source",
+          "${USERPROFILE}/repos",
+          "${USERPROFILE}/src",
+          "${USERPROFILE}/projects",
+          "${USERPROFILE}/code"
+        ],
+        "macos": [
+          "**/.git",
+          "${HOME}/source",
+          "${HOME}/repos",
+          "${HOME}/src",
+          "${HOME}/projects",
+          "${HOME}/code"
+        ],
+        "linux": [
+          "**/.git",
+          "${HOME}/source",
+          "${HOME}/repos",
+          "${HOME}/src",
+          "${HOME}/projects",
+          "${HOME}/code"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Source code and repositories",
+      "reason": "Work that may not be pushed anywhere else."
+    },
+    {
+      "id": "credentials",
+      "tier": "critical",
+      "platforms": ["windows", "macos", "linux"],
+      "match": {
+        "windows": [
+          "${USERPROFILE}/.ssh",
+          "${USERPROFILE}/.aws",
+          "${USERPROFILE}/.azure",
+          "${USERPROFILE}/.docker",
+          "${USERPROFILE}/.kube",
+          "${USERPROFILE}/.gnupg",
+          "${USERPROFILE}/.claude.json"
+        ],
+        "macos": [
+          "${HOME}/.ssh",
+          "${HOME}/.aws",
+          "${HOME}/.azure",
+          "${HOME}/.docker",
+          "${HOME}/.kube",
+          "${HOME}/.gnupg",
+          "${HOME}/.claude.json",
+          "${HOME}/Library/Keychains"
+        ],
+        "linux": [
+          "${HOME}/.ssh",
+          "${HOME}/.aws",
+          "${HOME}/.azure",
+          "${HOME}/.docker",
+          "${HOME}/.kube",
+          "${HOME}/.gnupg",
+          "${HOME}/.claude.json",
+          "${HOME}/.local/share/keyrings"
+        ]
+      },
+      "action": null,
+      "needsAdmin": false,
+      "description": "Credentials, keys and keychains",
+      "reason": "Keys and sign-in data. Losing them locks you out of services."
+    }
+  ]
+}
