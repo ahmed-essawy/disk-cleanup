@@ -1,0 +1,72 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install modules
+        run: |
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+      - name: PSScriptAnalyzer
+        if: matrix.shell == 'pwsh'
+        run: |
+          $findings = @('skills', 'tests') | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Settings PSScriptAnalyzerSettings.psd1 }
+          $findings | Format-Table -AutoSize
+          if (@($findings).Count -gt 0) { exit 1 }
+      - name: Pester
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          Invoke-Pester tests -CI
+
+  unix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Bash 3.2 and install tools on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install shellcheck
+          command -v jq || brew install jq
+          mkdir -p "$RUNNER_TEMP/bash32"
+          ln -s /bin/bash "$RUNNER_TEMP/bash32/bash"
+          echo "$RUNNER_TEMP/bash32" >> "$GITHUB_PATH"
+      - name: Show bash version
+        run: bash --version
+      - name: Install bats
+        run: git clone --depth 1 --branch v1.11.0 https://github.com/bats-core/bats-core.git "$RUNNER_TEMP/bats-core"
+      - name: shellcheck
+        run: shellcheck skills/disk-cleanup/scripts/*.sh tests/*.bats tests/*.bash
+      - name: bats
+        run: '"$RUNNER_TEMP/bats-core/bin/bats" tests'
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.325
+      - name: Validate plugin and marketplace
+        run: claude plugin validate .
+      - name: Validate rules.json
+        run: jq empty skills/disk-cleanup/rules/rules.json
